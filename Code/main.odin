@@ -91,7 +91,7 @@ BMPHeader_Init :: proc(width, height: i32, bits_per_pixel: u16) -> BMPHeader
 ImageRGBA_Write :: proc(image : ImageRGBA, filename: string) -> b32
 {
     header := BMPHeader_Init(width = cast(i32)image.width, height = cast(i32)image.height, bits_per_pixel = 32);
-    file_handle, error := os.open(filename, os.O_WRONLY);
+    file_handle, error := os.open(filename, os.O_WRONLY | os.O_CREATE);
     result := cast(b32)(error == os.ERROR_NONE);
     if result {
         os.write(file_handle, mem.ptr_to_bytes(&header));
