@@ -174,6 +174,12 @@ main :: proc()
     //     with the quadratic equation.
     //
     //     t = (-b ± sqrt(b^2 - 4ac)) / 2a
+    //
+    //     Note that any squared components is equivalent to the dot product of
+    //     it self and any vector multiply is a dot product
+    //     (since 'p^2 - radius^2 = 0' is equivalent to 'dot(p, p) - radius^2')
+    //
+    //     dot(dir)*t^2 + 2*dot(p1, dir)*t + dot(p1, p1) - radius^2 = 0
 
     planes : []Plane =
     {
@@ -219,25 +225,28 @@ main :: proc()
                 // See: Ray Intersects Sphere Surface comment for more info
                 //
                 // Equation for intersection
-                // dir^2*t^2 + 2*p1*dir*t + p1^2 - radius^2 = 0
+                // dot(dir)*t^2 + 2*dot(p1, dir)*t + dot(p1, p1) - radius^2 = 0
                 //
                 // Is of the form
                 // ax^2 + bx + c = 0 (i.e. the quadratic formula)
                 //
-                // (a)x^2 = (dir^2)*t^2
-                // (b)x   = (2*p1*dir)*t
-                // c      = p1^2 - radius^2
+                // (a)x^2 = dot(dir)
+                // (b)x   = 2 * dot(p1, dir)
+                // c      = dot(p1, p1) - radius^2
                 //
                 // Solved with the quadratic equation
                 // x = (-b ± sqrt(b^2 - 4ac)) / 2a
                 //
+                // Note before that the 'p' (or 'p1') in this case is actually
+                // represented as 'p1 - sphere_centre' in the sphere equation
+                // 'p^2 - r^2 = 0' (as explained in the equation of a sphere
+                // above) then we need to ensure p1 is calculated as such.
 
-                origin_to_sphere : Dqn_V3f = ray_origin - sphere.p;
-
-                a            : f32 = linalg.vector_dot(ray_direction, ray_direction);
-                b            : f32 = 2 * linalg.vector_dot(origin_to_sphere, ray_direction);
-                c            : f32 = linalg.vector_dot(origin_to_sphere, origin_to_sphere) - (sphere.r * sphere.r);
-                discriminant : f32 = (b * b) - (4 * a * c);
+                sphere_relative_origin : Dqn_V3f = ray_origin - sphere.p;
+                a                : f32 = linalg.vector_dot(ray_direction, ray_direction);
+                b                : f32 = 2 * linalg.vector_dot(sphere_relative_origin, ray_direction);
+                c                : f32 = linalg.vector_dot(sphere_relative_origin, sphere_relative_origin) - (sphere.r * sphere.r);
+                discriminant     : f32 = (b * b) - (4 * a * c);
 
                 // Ray intersection. Note if the discriminant was 0, the
                 // quadratic equation simplifies down to one solution, i.e.
