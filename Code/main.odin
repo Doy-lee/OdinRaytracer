@@ -38,6 +38,14 @@ ImageRGBA :: struct
     pixels: []u32,
 };
 
+LightType :: enum{Point, Directional, Ambient};
+Light :: struct
+{
+    type : LightType,
+    intensity : f32,
+    xyz : Dqn_V3f,
+};
+
 Material :: struct
 {
     color: Dqn_V3f,
@@ -62,6 +70,7 @@ World :: struct
     materials: []Material,
     planes: []Plane,
     spheres: []Sphere,
+    lights: []Light,
 };
 
 BMPHeader_ImageSize :: proc(header: ^BMPHeader) -> Dqn_V2i
@@ -193,10 +202,18 @@ main :: proc()
         {p = Dqn_V3f{-2, 0, 4}, r = 1.0, material_index = 3},
     };
 
+    lights : []Light =
+    {
+        {type = LightType.Ambient, intensity = 0.2},
+        {type = LightType.Point, intensity = 0.6, xyz = Dqn_V3f{2, 1, 0}},
+        {type = LightType.Directional, intensity = 0.2, xyz = Dqn_V3f{1, 4, 4}},
+    };
+
     world : World;
     world.materials = materials[:];
     world.planes = planes[:];
     world.spheres = spheres[:];
+    world.lights = lights[:];
 
     camera_p := Dqn_V3f{0, 0, 0};
 
@@ -217,7 +234,7 @@ main :: proc()
             ray_direction : Dqn_V3f = linalg.vector_normalize(pixel_to_film_p - camera_p);
 
             best_t: f32 = math.F32_MAX;
-            material: ^Material = &materials[0];
+            best_sphere: Sphere;
             for _, i in world.spheres
             {
                 sphere := &world.spheres[i];
@@ -264,20 +281,44 @@ main :: proc()
                     if (t_plus > film_dist && t_plus < best_t)
                     {
                         best_t = t_plus;
-                        material = &materials[sphere.material_index];
+                        best_sphere = sphere^;
                     }
 
                     if (t_minus > film_dist && t_minus < best_t)
                     {
                         best_t = t_minus;
-                        material = &materials[sphere.material_index];
+                        best_sphere = sphere^;
                     }
                 }
             }
 
-            r := cast(u8)material.color[0] * 255;
-            g := cast(u8)material.color[1] * 255;
-            b := cast(u8)material.color[2] * 255;
+            material := &materials[best_sphere.material_index];
+            light_coeff : f32;
+            for _, light_index in world.lights
+            {
+                light : ^Light = &world.lights[light_index];
+                switch light.type
+                {
+                    case .Ambient:
+                        light_coeff += light.intensity;
+
+                    case .Directional: fallthrough;
+                    case .Point:
+                        surface_p           : Dqn_V3f = ray_origin + (ray_direction * best_t);
+                        light_vector        : Dqn_V3f = light.type == .Directional ? light.xyz : light.xyz - surface_p;
+                        surface_n           : Dqn_V3f = linalg.vector_normalize(surface_p - best_sphere.p);
+                        surface_n_dot_light : f32     = linalg.vector_dot(surface_n, light_vector);
+                        if surface_n_dot_light > 0
+                        {
+                            light_vector_length : f32 = linalg.vector_length(light_vector);
+                            light_coeff += light.intensity * surface_n_dot_light / light_vector_length;
+                        }
+                }
+            }
+
+            r := cast(u8)(cast(f32)material.color[0] * 255.0 * light_coeff);
+            g := cast(u8)(cast(f32)material.color[1] * 255.0 * light_coeff);
+            b := cast(u8)(cast(f32)material.color[2] * 255.0 * light_coeff);
             image.pixels[(y * image.width) + x] = cast(u32)0xff << 24 | cast(u32)r << 16 | cast(u32)g << 8 | cast(u32)b << 0;
         }
     }
