@@ -49,6 +49,7 @@ Light :: struct
 Material :: struct
 {
     color: Dqn_V3f,
+    specular_exponent : f32,
 };
 
 Plane :: struct
@@ -125,10 +126,10 @@ main :: proc()
 {
     materials : []Material =
     {
-        {color = Dqn_V3f{0, 0, 0}},
-        {color = Dqn_V3f{1, 0, 0}},
-        {color = Dqn_V3f{0, 0, 1}},
-        {color = Dqn_V3f{0, 1, 0}},
+        {color = Dqn_V3f{0, 0, 0}, specular_exponent = 1.0},
+        {color = Dqn_V3f{1, 0, 0}, specular_exponent = 1.0},
+        {color = Dqn_V3f{0, 0, 1}, specular_exponent = 1.0},
+        {color = Dqn_V3f{0, 1, 0}, specular_exponent = 1.0},
     };
 
     // Equations
@@ -304,6 +305,25 @@ main :: proc()
 
                     case .Directional: fallthrough;
                     case .Point:
+
+                        // Light is represented as the intensity of the color
+                        // (i.e. a coefficient on the color values on point of
+                        // the surface). The intensity is calculated as the
+                        // projection of the vector from the surface to the
+                        // light against the normal of the surface, otherwise
+                        // known as the dot product.
+                        //
+                        // Note that when the light vector is exactly parallel
+                        // to the surface, the intensity is calculated as 1,
+                        // (i.e. the dot product of 2 normalized vectors that
+                        // are parallel is known as dot(a, b) == 1) hence the
+                        // color reflected is at it's most intense.
+                        //
+                        // Similarly, when (dot(a, b) == 0) the projection of
+                        // a onto b, means the light hitting the surface at an
+                        // angle of 90 degrees and is modelled as having no
+                        // impact on the intensity of the color reflected.
+                        //
                         surface_p           : Dqn_V3f = ray_origin + (ray_direction * best_t);
                         light_vector        : Dqn_V3f = light.type == .Directional ? light.xyz : light.xyz - surface_p;
                         surface_n           : Dqn_V3f = linalg.vector_normalize(surface_p - best_sphere.p);
@@ -312,6 +332,78 @@ main :: proc()
                         {
                             light_vector_length : f32 = linalg.vector_length(light_vector);
                             light_coeff += light.intensity * surface_n_dot_light / light_vector_length;
+                        }
+
+                        /*
+                            Calculating a reflection vector given a normal and an incident ray.
+
+                                 N
+                             L   ^   R
+                             ^   |   ^
+                              \  |  /
+                               \a|b/
+                            ____\|/____
+                                 x
+
+                            L Light vector (i.e. incident ray)
+                            N Normal to the surface
+                            R Reflection vector [reflection of the light vector]
+                            a Angle between L and N
+                            b Angle between N and R
+                            x Intersect point of the light vector (indicent ray) against the surface
+
+                            The reflection vector is defined where angle a == b.
+                            Since angle (a == b) then the vector LN is the same length as NR by
+                            symmetry.
+
+                                 N
+                             L   ^   R
+                             ^---n   ^
+                              \  |  /
+                               \a|b/
+                            ____\|/____
+                                 x
+
+                            To get the length Ln notated by the '---' in the diagram, it can be
+                            calculated as length(L - nx), but we don't know what 'nx' is exactly. We
+                            have a normal vector (N) that is of unit length that we can use the dot
+                            product on to figure out the length of 'nx' and scale the normal vector
+                            via the length.
+
+                            Hence,
+                             - Project L onto N via the dot product dot(L, N), this gives us the
+                               length of the vector nx
+                             - Multiply the length of the vector nx agains the normal vector (N)
+
+                            i.e. nx = dot(L, N) * N
+                                    = length(nx) * N
+
+                            then
+
+                                 Ln = L - nx
+
+                            Similarly,
+
+                                 Rn = R - nx
+
+                            But note that Rn is the same as -Ln due to symmetry (a == b), hence
+
+                                 Rn              = -Ln
+                                 R - nx          = -(L - nx)
+                                 R - dot(L, N)*N = -L + dot(L, N)*N
+                                 R               = 2*dot(L, N)*N - L
+                         */
+
+                        reflected_light_v3 : Dqn_V3f = (2 * surface_n_dot_light * surface_n) - light_vector;
+                        surface_to_ray_origin_v3 : Dqn_V3f = ray_origin - surface_p;
+
+                        reflected_light_v3_dot_surface_to_ray_origin_v3 : f32 = linalg.dot(reflected_light_v3, surface_to_ray_origin_v3);
+                        if reflected_light_v3_dot_surface_to_ray_origin_v3 > 0 {
+                            reflected_light_v3_length       : f32 = linalg.vector_length(reflected_light_v3);
+                            surface_to_ray_origin_v3_length : f32 = linalg.vector_length(surface_to_ray_origin_v3);
+
+                            angle_between_reflected_light_and_ray_origin : f32 = reflected_light_v3_dot_surface_to_ray_origin_v3 / (reflected_light_v3_length * surface_to_ray_origin_v3_length);
+                            light_coeff += light.intensity * math.pow(angle_between_reflected_light_and_ray_origin, material.specular_exponent);
                         }
                 }
             }
